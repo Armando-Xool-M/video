@@ -1,63 +1,64 @@
 package video;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-
-import javax.imageio.ImageIO;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfByte;
 import org.opencv.core.Size;
+import org.opencv.highgui.HighGui;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
-import org.opencv.videoio.Videoio;
 
 public class WebcamServer {
 
-    static {
-        System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
-    }
+    private static final int PORT = 8080;
+    private static List<Socket> clients = new ArrayList<>();
 
     public static void main(String[] args) throws IOException {
-        VideoCapture capture = new VideoCapture(0);
-        capture.set(Videoio.CAP_PROP_FRAME_WIDTH, 640);
-        capture.set(Videoio.CAP_PROP_FRAME_HEIGHT, 480);
-        capture.set(Videoio.CAP_PROP_FPS, 30);
+        System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+        ServerSocket serverSocket = new ServerSocket(PORT);
+        System.out.println("Server started at port " + PORT);
 
-        ServerSocket serverSocket = new ServerSocket(9999);
-        while (true) {
-            Socket socket = serverSocket.accept();
-            new Thread(() -> {
-                try {
-                    OutputStream out = socket.getOutputStream();
-                    while (true) {
-                        Mat frame = new Mat();
-                        capture.read(frame);
-                        BufferedImage img = Utils.matToBufferedImage(frame);
-                        BufferedImage encodedImg = encodeImage(img);
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        ImageIO.write(encodedImg, "jpg", baos);
-                        byte[] data = baos.toByteArray();
-                        out.write(data);
-                        out.flush();
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }).start();
+        VideoCapture camera = new VideoCapture(0);
+        if (!camera.isOpened()) {
+            System.err.println("Cannot open camera.");
+            return;
         }
-    }
 
-    private static BufferedImage encodeImage(BufferedImage img) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ImageIO.write(img, "jpg", baos);
-        byte[] data = baos.toByteArray();
-        ByteArrayInputStream bais = new ByteArrayInputStream(data);
-        BufferedImage encodedImg = ImageIO.read(bais);
-        return encodedImg;
-    }
+        while (true) {
+            Mat frame = new Mat();
+            camera.read(frame);
+            MatOfByte buffer = new MatOfByte();
+            Imgcodecs.imencode(".jpg", frame, buffer);
+            byte[] data = buffer.toArray();
 
+            for (Socket client : clients) {
+                try {
+                    client.getOutputStream().write(data);
+                } catch (IOException e) {
+                    System.err.println("Cannot send data to client.");
+                }
+            }
+
+            // Resize the frame to a specific size
+            Size size = new Size(640, 480);
+            Imgproc.resize(frame, frame, size);
+
+            HighGui.imshow("Webcam", frame);
+            if (HighGui.waitKey(1) == 27) {
+                break;
+            }
+        }
+
+        camera.release();
+        HighGui.destroyAllWindows();
+        serverSocket.close();
+    }
 }
+

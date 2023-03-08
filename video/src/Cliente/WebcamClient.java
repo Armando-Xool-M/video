@@ -3,57 +3,75 @@
  * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
  */
 package Cliente;
+
 import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;
 
-import javax.imageio.ImageIO;
-
-import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.scene.Scene;
-import javafx.scene.canvas.Canvas;
-import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.Image;
-import javafx.scene.image.WritableImage;
-import javafx.scene.layout.StackPane;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.BorderPane;
 import javafx.stage.Stage;
+import org.opencv.core.Core;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfByte;
+import org.opencv.highgui.HighGui;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
 
 public class WebcamClient extends Application {
 
+    private static final String HOSTNAME = "localhost";
+    private static final int PORT = 8080;
+    private static final int WIDTH = 640;
+    private static final int HEIGHT = 480;
+
+    private Socket socket;
+    private InputStream inputStream;
+    private Mat mat = new Mat();
+
     @Override
-    public void start(Stage primaryStage) throws Exception {
-        Socket socket = new Socket("localhost", 9999);
-        InputStream in = socket.getInputStream();
-        DataInputStream dis = new DataInputStream(in);
+    public void start(Stage stage) throws Exception {
+        BorderPane root = new BorderPane();
+        ImageView imageView = new ImageView();
+        root.setCenter(imageView);
+        Scene scene = new Scene(root, WIDTH, HEIGHT);
+        stage.setScene(scene);
+        stage.setTitle("Webcam");
+        stage.show();
 
-        Canvas canvas = new Canvas(640, 480);
-        GraphicsContext gc = canvas.getGraphicsContext2D();
-        StackPane root = new StackPane(canvas);
-        Scene scene = new Scene(root, 640, 480);
-        primaryStage.setScene(scene);
-        primaryStage.show();
+        System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
 
-        AnimationTimer timer = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                try {
-                    byte[] data = new byte[dis.available()];
-                    dis.readFully(data);
-                    Image img = new Image(new ByteArrayInputStream(data));
-                    gc.drawImage(img, 0, 0);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+        socket = new Socket(HOSTNAME, PORT);
+        inputStream = socket.getInputStream();
+
+        while (true) {
+            try {
+                byte[] buffer = new byte[WIDTH * HEIGHT * 3];
+                inputStream.read(buffer);
+                mat = Imgcodecs.imdecode(new MatOfByte(buffer), Imgcodecs.IMREAD_UNCHANGED);
+
+                // Resize the image to fit the ImageView
+                Imgproc.resize(mat, mat, new org.opencv.core.Size(WIDTH, HEIGHT));
+
+                // Convert the OpenCV Mat to a JavaFX Image
+                MatOfByte byteMat = new MatOfByte();
+                Imgcodecs.imencode(".jpg", mat, byteMat);
+                byte[] byteArray = byteMat.toArray();
+                InputStream stream = new ByteArrayInputStream(byteArray);
+                Image image = new Image(stream);
+
+                imageView.setImage(image);
+            } catch (IOException e) {
+                System.err.println("Cannot receive data from server.");
             }
-        };
-        timer.start();
+        }
     }
 
     public static void main(String[] args) {
         launch(args);
     }
-
 }
